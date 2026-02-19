@@ -44,10 +44,10 @@
             // 
             HeaderLabel.AutoSize = true;
             HeaderLabel.Font = new Font("Dancing Script", 34F, FontStyle.Bold);
-            HeaderLabel.Location = new Point(152, 61);
+            HeaderLabel.Location = new Point(192, 61);
             HeaderLabel.Margin = new Padding(0);
             HeaderLabel.Name = "HeaderLabel";
-            HeaderLabel.Size = new Size(772, 96);
+            HeaderLabel.Size = new Size(683, 96);
             HeaderLabel.TabIndex = 5;
             HeaderLabel.Text = "Bpr Model Generator Tool";
             // 
