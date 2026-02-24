@@ -1,11 +1,12 @@
-﻿using ModelGenerator.FormManagement;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
+using ModelGenerator.FormManagement;
 
 namespace ModelGenerator.Utility
 {
@@ -15,6 +16,7 @@ namespace ModelGenerator.Utility
         public JsonSetting() { }
         private const string settingFileName = "BprModelGeneratorSetting.json";
         private readonly string _settingPath = Path.Combine(AppContext.BaseDirectory, settingFileName);
+        private static readonly JsonSerializerOptions _jsonSerializerOptions = new() { WriteIndented = true };
         #endregion
 
         #region Public
@@ -222,6 +224,13 @@ namespace ModelGenerator.Utility
             var content = File.ReadAllText(_settingPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(content) ?? new();
 
+            var existingDb = settings.Databases.FirstOrDefault(d => d.Name.Equals(newDb.Name, StringComparison.OrdinalIgnoreCase));
+            if (existingDb != null)
+            {
+                newDb.SchemaDataModelPath ??= existingDb.SchemaDataModelPath;
+                newDb.TemplateConfig ??= existingDb.TemplateConfig;
+            }
+
             settings.Databases.RemoveAll(d => d.Name.Equals(newDb.Name, StringComparison.OrdinalIgnoreCase));
 
             settings.Databases.Add(newDb);
@@ -235,8 +244,7 @@ namespace ModelGenerator.Utility
             }
             else
             {
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_settingPath, json);
+                SaveSettings(settings);
                 isSuccess = true;
             }
         }
@@ -274,8 +282,7 @@ namespace ModelGenerator.Utility
             {
                 settings.Databases.RemoveAll(d => d.Name.Equals(databaseName, StringComparison.OrdinalIgnoreCase));
                 settings.Databases.Add(databaseSetting);
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_settingPath, json);
+                SaveSettings(settings);
                 isSuccess = true;
             }
         }
@@ -304,8 +311,7 @@ namespace ModelGenerator.Utility
 
             settings.Databases.RemoveAll(d => d.Name.Equals(databaseName, StringComparison.OrdinalIgnoreCase));
             settings.Databases.Add(databaseSetting);
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_settingPath, json);
+            SaveSettings(settings);
             isSuccess = true;
         }
         public DatabaseSettings GetDatabaseFromForm
@@ -380,7 +386,7 @@ namespace ModelGenerator.Utility
 
             settings.Databases.RemoveAll(d => d.Name.Equals(dbName, StringComparison.OrdinalIgnoreCase));
 
-            File.WriteAllText(_settingPath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            SaveSettings(settings);
         }
         public void DeleteConfigTemplateByDatabaseName(string dbName)
         {
@@ -410,8 +416,7 @@ namespace ModelGenerator.Utility
 
             settings.Databases.RemoveAll(d => d.Name.Equals(dbName, StringComparison.OrdinalIgnoreCase));
             settings.Databases.Add(databaseSetting);
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_settingPath, json);
+            SaveSettings(settings);
         }
         public void DeleteSchemaDataModelPathByDatabaseName(string dbName)
         {
@@ -441,8 +446,7 @@ namespace ModelGenerator.Utility
 
             settings.Databases.RemoveAll(d => d.Name.Equals(dbName, StringComparison.OrdinalIgnoreCase));
             settings.Databases.Add(databaseSetting);
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_settingPath, json);
+            SaveSettings(settings);
         }
         public string GetDataModelPathByDatabaseName(string databaseName)
         {
@@ -493,8 +497,48 @@ namespace ModelGenerator.Utility
             if (!File.Exists(_settingPath))
             {
                 var emptySettings = new AppSettings { Databases = new() };
-                var json = JsonSerializer.Serialize(emptySettings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_settingPath, json);
+                SaveSettings(emptySettings);
+            }
+        }
+        private bool DatabaseExists(string connectionString, out string error)
+        {
+            error = string.Empty;
+
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(connectionString);
+                var databaseName = builder.InitialCatalog;
+
+                if (string.IsNullOrWhiteSpace(databaseName))
+                {
+                    error = "Database name is missing in the connection string.";
+                    return false;
+                }
+
+                builder.InitialCatalog = "master";
+                builder.ConnectTimeout = Math.Min(builder.ConnectTimeout > 0 ? builder.ConnectTimeout : 15, 5);
+
+                using var connection = new SqlConnection(builder.ConnectionString);
+                connection.Open();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT DB_ID(@databaseName)";
+                command.Parameters.AddWithValue("@databaseName", databaseName);
+                command.CommandTimeout = 5;
+
+                var dbId = command.ExecuteScalar();
+                if (dbId == null || dbId == DBNull.Value)
+                {
+                    error = $"Database '{databaseName}' was not found on the SQL Server.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = $"Database validation failed: {ex.Message}";
+                return false;
             }
         }
         private bool ValidateEfEnvironment(string connectionString, string dataModelPath, out string error)
@@ -504,6 +548,11 @@ namespace ModelGenerator.Utility
             if (!Directory.Exists(dataModelPath))
             {
                 error = "DataModel Project Path Is Invalid.";
+                return false;
+            }
+
+            if (!DatabaseExists(connectionString, out error))
+            {
                 return false;
             }
 
@@ -576,6 +625,44 @@ namespace ModelGenerator.Utility
             {
                 error = $"--- EF Scaffold check failed: {ex.Message}";
                 return false;
+            }
+        }
+        private void SaveSettings(AppSettings settings)
+        {
+            var json = JsonSerializer.Serialize(settings, _jsonSerializerOptions);
+
+            var directoryPath = Path.GetDirectoryName(_settingPath);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            var tempFilePath = $"{_settingPath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                File.WriteAllText(tempFilePath, json, Encoding.UTF8);
+
+                if (!File.Exists(_settingPath))
+                {
+                    File.Move(tempFilePath, _settingPath);
+                    return;
+                }
+
+                try
+                {
+                    File.Replace(tempFilePath, _settingPath, null);
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    File.Move(tempFilePath, _settingPath, true);
+                }
+            }
+            finally
+            {
+                if (File.Exists(tempFilePath))
+                {
+                    File.Delete(tempFilePath);
+                }
             }
         }
 
