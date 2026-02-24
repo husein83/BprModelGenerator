@@ -134,7 +134,7 @@ namespace ModelGenerator.Utility
                     ));
 
                 if (refMeta != null && (refMeta?.RefJson != null && !string.IsNullOrEmpty(refMeta.RefJson.InverseKey)) ||
-                                       (refMeta?.SetJson != null && refMeta.SetJson.Count == 1 && !string.IsNullOrEmpty(refMeta.SetJson.First().InverseKey)))
+                                       (refMeta?.SetJson != null && refMeta.SetJson.Any(p => p.Field.Contains("Ref") && p.Field.Contains(refType) && !string.IsNullOrEmpty(p.InverseKey))))
                 {
                     string propertyName, inverseKey;
                     if (refMeta.RefJson != null)
@@ -144,8 +144,8 @@ namespace ModelGenerator.Utility
                     }
                     else
                     {
-                        propertyName = refMeta.SetJson.First().Field;
-                        inverseKey = refMeta.SetJson.First().InverseKey;
+                        propertyName = refMeta.SetJson.First(p => p.Field.Contains("Ref") && p.Field.Contains(refType) && !string.IsNullOrEmpty(p.InverseKey)).Field;
+                        inverseKey = refMeta.SetJson.First(p => p.Field.Contains("Ref") && p.Field.Contains(refType) && !string.IsNullOrEmpty(p.InverseKey)).InverseKey;
                     }
 
                     var parts = inverseKey.Split('_');

@@ -178,21 +178,12 @@ namespace ModelGenerator.FormManagement
             ClassDeclarationInheritanceFormatTextBox.Text = "Bpr.Data.EntityBase";
             ClassDeclarationNameFormatTextBox.Text = "public partial class {ClassName}";
             ConstructorFormatTextBox.Text = "public {ClassName}() { }";
-            ColumnFormatTextBox.Text = "public {Type} {Name} { get; set; }";
-            ReferenceFormatTextBox.Text =
-            "public virtual {RefType} {PropertyName} { get; set; }";
-            RelationFormatTextBox.Text =
-            "public virtual ICollection<{RelatedType}> {PropertyName} { get; set; }";
-            int i = OverrideFieldsDataGridView.Rows.Add();
-            var row = OverrideFieldsDataGridView.Rows[i];
-            row.Cells["Field"].Value = "Id";
+            ColumnFormatTextBox.Text = "{Attributes}public {Type} {Name} { get; set; }";
+            ReferenceFormatTextBox.Text = "[ForeignKey(\"{FieldName}\")]{NewLine}public virtual {RefType}? {PropertyName} { get; set; }";
+            RelationFormatTextBox.Text = "public virtual ICollection<{RelatedType}>? {PropertyName} { get; set; }";
+
             var customRegionsDict = new Dictionary<string, List<string>>
             {
-                ["Override"] = new List<string>
-                {
-                    "public override string GetTableName => TABLE_NAME;",
-                    "public override string GetSchemaName => SCHEMA_NAME;"
-                },
                 ["Constants"] = new List<string>
                 {
                     "private const string TABLE_NAME = \"{ClassName}\";",
